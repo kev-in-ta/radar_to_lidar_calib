@@ -28,6 +28,7 @@ python calibrate.py --root {/path/to/root} --resolution 0.044 --fix_azimuths --l
 ```
 
 **LiDAR format:** `.csv` or `.txt` compatible with `np.loadtxt()`
+
 **RADAR format:** `.png` polar image
 
 `--feature_std 4.0` may be used in indoor settings to mitigate the noisiness of returns. Default in original repository was `3.0`.
