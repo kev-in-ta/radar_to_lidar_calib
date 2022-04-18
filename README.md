@@ -6,10 +6,14 @@ This repository can be used to calculate the extrinsic calibration between a Nav
 # Instructions
 The robot/vehicle should be outdoors and stationary during the calibration process.
 
-It is expected that Navtech radar data is being published as a Polar image using the format described by the [Oxford Radar Robotcar Dataset](https://oxford-robotics-institute.github.io/radar-robotcar-dataset/). This format expects that the polar image is shifted horizontally by 11 pixels such that timestamp and azimuth data are encoded in the image. The first eight pixels correspond to the UNIX timestamp as int64 (cols 0-7). Columns 8-9 encode the sweep counter as uint16, converted to angle in radians with angle = pi * sweep_counter / 2800. Column 10 represents a valid flag, which we do not use but preserve for compatibility with their format.
+~~It is expected that Navtech radar data is being published as a Polar image using the format described by the [Oxford Radar Robotcar Dataset](https://oxford-robotics-institute.github.io/radar-robotcar-dataset/). This format expects that the polar image is shifted horizontally by 11 pixels such that timestamp and azimuth data are encoded in the image. The first eight pixels correspond to the UNIX timestamp as int64 (cols 0-7). Columns 8-9 encode the sweep counter as uint16, converted to angle in radians with angle = pi * sweep_counter / 2800. Column 10 represents a valid flag, which we do not use but preserve for compatibility with their format.~~
 
-Collect at least one pair of radar and lidar data extracted using the extract.py script.
-This script expects that your radar and lidar topics are being published in ROS.
+***The code has been modified to assume an 8 pixel shift which stores the timestamp. No azimuth information is encoded.***
+
+~~Collect at least one pair of radar and lidar data extracted using the extract.py script.~~
+~~This script expects that your radar and lidar topics are being published in ROS.~~
+
+***Extraction is completed separately.***
 
 Collecting more pairs of data in different locations will lead to a more accurate final result since we average the translation and rotation estimates over the number of pairs.
 
@@ -17,8 +21,20 @@ Note: this calibration is mostly useful for estimating rotation. I've verified t
 
 Note 2: the extract.py script uses rospy and Python 2. The calibrate.py script uses Python 3.
 
+# Running Calibration
+
+```bash
+python calibrate.py --root {/path/to/root} --resolution 0.044 --fix_azimuths --light_mode --feature_std 4.0
+```
+
+**LiDAR format:** `.csv` or `.txt` compatible with `np.loadtxt()`
+**RADAR format:** `.png` polar image
+
+`--feature_std 4.0` may be used in indoor settings to mitigate the noisiness of returns. Default in original repository was `3.0`.
+
 # Example Data
-Sample data for this repository can be downloaded using the provided script: download_data.sh. The example data includes radar data from a Navtech CIR204-H and lidar data from a Velodyne Alpha-Prime (128 beam).
+
+~~Sample data for this repository can be downloaded using the provided script: download_data.sh. The example data includes radar data from a Navtech CIR204-H and lidar data from a Velodyne Alpha-Prime (128 beam).~~
 
 # References
 Using the Fourier Mellin transform with radar data was previously shown in these works:
@@ -32,4 +48,5 @@ The Fourier Mellin transform for image registration is described in detail here:
 [Reddy, B. Srinivasa, and Biswanath N. Chatterji. "An FFT-based technique for translation, rotation, and scale-invariant image registration." IEEE transactions on image processing 5.8 (1996): 1266-1271.](https://ieeexplore.ieee.org/abstract/document/506761?casa_token=WrYrcyq6NloAAAAA:T43aa6Mluef9jc69kNuK-q713zy12-pQzrf9YwQwji2B5byd06dLjTVhUaXyBuSKbnNe5vCm2ys)
 
 ## TODO:
-- [ ] Remove outliers from the registration process to improve the final rotation estimate
+- [x] Remove outliers from the registration process to improve the final rotation estimate
+  *Only returns the average of results within 3 standard deviations of the mean result.

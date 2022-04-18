@@ -23,13 +23,8 @@ def get_rotation(theta):
     R[0:2, 0:2] = np.array([[np.cos(theta), np.sin(theta)],[-np.sin(theta), np.cos(theta)]])
     return R
 
-# Returns a 3 x N array of lidar points (x, y, z)
-# def load_lidar(filename):
-#     lidar = np.loadtxt(filename, delimiter=',')
-#     return lidar[:, 0:3].transpose()
-
 def load_lidar(path):
-    points = np.fromfile(path, dtype=np.float32).reshape((-1, 6))
+    points = np.loadtxt(path, delimiter=',', dtype=np.float32)
     return points[:, :3].T
 
 # Converts a lidar point cloud (3 x N) into a top-down cartesian image
@@ -40,7 +35,7 @@ def lidar_to_cartesian_image(pc, cart_pixel_width, cart_resolution):
         cart_min_range = cart_pixel_width // 2 * cart_resolution
     cart_img = np.zeros((cart_pixel_width, cart_pixel_width))
     for i in range(0, pc.shape[1]):
-        if pc[2, i] < -1.5 or pc[2, i] > 1.5:
+        if pc[2, i] < -0 or pc[2, i] > 0.5:
             continue
         u = int((cart_min_range - pc[1, i]) / cart_resolution)
         v = int((cart_min_range - pc[0, i]) / cart_resolution)
@@ -52,7 +47,7 @@ def lidar_to_cartesian_image(pc, cart_pixel_width, cart_resolution):
 def lidar_to_polar_image(pc, range_resolution, azimuth_resolution, range_bins, azimuth_bins):
     polar = np.zeros((azimuth_bins, range_bins))
     for i in range(0, pc.shape[1]):
-        if x[2, i] < -1.5 or x[2, i] > 1.5:
+        if x[2, i] < -0 or x[2, i] > 0.5:
             continue
         r = np.sqrt(x[0, i]**2 + x[1, i]**2)
         theta = np.arctan2(x[1, i], x[0, i])
@@ -80,6 +75,9 @@ if __name__ == "__main__":
     parser.add_argument('--visualize_results', action='store_true', default=True)
     parser.add_argument('--fix_azimuths', action='store_true')
     parser.add_argument('--azimuth_bins', type=int, default=400, help='number of azimuth measurements made by radar per rotation')
+    parser.add_argument('--x_offset', type=float, default=0.4, help='translational x offset from radar to lidar (m)')
+    parser.add_argument('--y_offset', type=float, default=-0.15, help='translational y offset from radar to lidar (m)')
+    parser.add_argument('--feature_std', type=float, default=3.0, help='feature detection standard deviation threshold')
     args = parser.parse_args()
     root = args.root
     radar_resolution = args.resolution
@@ -87,17 +85,17 @@ if __name__ == "__main__":
     visualize_results = args.visualize_results
     fix_azimuths = args.fix_azimuths
     azimuth_bins = args.azimuth_bins
+    x_offset = args.x_offset
+    y_offset = args.y_offset
+    feature_std = args.feature_std
     
     # Get lidar and radar files
     radar_root = osp.join(root, 'radar')
     lidar_root = osp.join(root, 'lidar')
     radar_files = sorted([f for f in os.listdir(radar_root) if 'png' in f])
-    lidar_files = sorted([f for f in os.listdir(lidar_root) if 'bin' in f])
-    lstamps = [float(f.split('.')[0]) * 1e-6 for f in lidar_files]
-    rstamps = [float(f.split('.')[0]) * 1e-6 for f in radar_files]
+    lidar_files = sorted([f for f in os.listdir(lidar_root) if ('csv' in f or 'txt' in f)])
     
     # Align lidar files with radar files based on their filenames / timestamps
-    lidar_files = [get_closest_frame(rstamp, lstamps, lidar_files) for rstamp in rstamps]
     assert(len(radar_files) == len(lidar_files))
 
     if not osp.exists("figs"):
@@ -135,13 +133,15 @@ if __name__ == "__main__":
             assert(fft_data.shape[0] == azimuths.shape[0])
 
         # Extract radar target locations and convert these into polar and cartesian images
-        targets = cen2018features(fft_data)
+        targets = cen2018features(fft_data, 58, feature_std, 17)
         polar = targets_to_polar_image(targets, fft_data.shape)
         cart = radar_polar_to_cartesian(azimuths, polar, radar_resolution, cart_resolution, cart_pixel_width)
         cart = np.where(cart > 0, 255, 0)
 
         # Load lidar data and convert it into polar and cartesian images
         x = load_lidar(osp.join(lidar_root, lidar_files[i]))
+        x[0, ...] = x[0, ...] + x_offset
+        x[1, ...] = x[1, ...] + y_offset
         cart_lidar = lidar_to_cartesian_image(x, cart_pixel_width, cart_resolution)
         polar_lidar = lidar_to_polar_image(x, radar_resolution, azimuth_step, range_bins, azimuth_bins * upsample_azimuths)
 
@@ -188,12 +188,12 @@ if __name__ == "__main__":
             translations.append(xbar.transpose())
 
     rotations = np.array(rotations)
-    rotation = np.mean(rotations)
-    print('rotation: {} radians, {} degrees'.format(rotation, rotation * 180 / np.pi))
+    rotation = np.mean(rotations[np.abs(rotations - rotation.mean()) < 3 * rotations.std()])
+    print(f'rotation: {rotation} radians, {np.rad2deg(rotation)} degrees | StD: {rotations.std()} radians, {np.rad2deg(rotations.std())} degrees')
     if calibrate_translation:
         translations = np.array(translations)
         translation = np.mean(translations, axis=0)
-        print('x: {} y : {}'.format(translation[0, 0], translation[0, 1]))
+        print('x: {} y : {} z : {}'.format(translation[0, 0], translation[0, 1], translation[0, 2]))
 
     if visualize_results:
         cart_resolution = 0.25
@@ -202,15 +202,28 @@ if __name__ == "__main__":
         azimuth_bins = 400
         R = get_rotation(rotation)
         print(rotations)
-        plt.plot(np.array(range(rotations.shape[0])), rotations)
+        plt.plot(np.array(range(rotations.shape[0])), np.rad2deg(rotations), 'bo--')
+        plt.title("Rotation Calibration Results")
+        plt.ylabel("Yaw Rotation ($^\circ$)")
+        plt.xlabel("Scenes")
         plt.show()
+        
+        if calibrate_translation:
+            plt.plot(translations[:,0,0], translations[:,0,1], 'r.')
+            plt.title("Translation Calibration Results")
+            plt.ylabel("Y")
+            plt.xlabel("X")
+            plt.show()
+        
         for i in range(0, len(radar_files)):
             _, azimuths, _, fft_data = load_radar(osp.join(radar_root, radar_files[i]), fix_azimuths)
-            targets = cen2018features(fft_data)
+            targets = cen2018features(fft_data, 58, 3.0, 17)
             polar = targets_to_polar_image(targets, fft_data.shape)
             cart = radar_polar_to_cartesian(azimuths, polar, radar_resolution, cart_resolution, cart_pixel_width)
             cart = np.where(cart > 0, 255, 0)
             x = load_lidar(osp.join(lidar_root, lidar_files[i]))
+            x[0, ...] = x[0, ...] + x_offset
+            x[1, ...] = x[1, ...] + y_offset
             cart_lidar = lidar_to_cartesian_image(x, cart_pixel_width, cart_resolution)
             for j in range(0, x.shape[1]):
                 x[:,j] = np.squeeze(np.matmul(R, x[:,j].reshape(3,1)))
@@ -224,7 +237,7 @@ if __name__ == "__main__":
                 rgb[..., 0] = np.logical_or(cart_lidar2, mask2) * 255
                 rgb[..., 1] = np.logical_and(rgb[..., 1], mask2) * 255
                 rgb[..., 2] = np.logical_or(rgb[..., 2], cart) * 255
-                rgb[..., 0] *= np.logical_not(np.logical_and(cart_lidar2, cart))
+                #rgb[..., 0] *= np.logical_not(np.logical_and(cart_lidar2, cart))
             else:
                 rgb = np.zeros((cart_pixel_width, cart_pixel_width, 3), np.uint8)
                 rgb[..., 0] = cart_lidar2
@@ -232,20 +245,21 @@ if __name__ == "__main__":
 
             cv2.imwrite(osp.join("figs", "combined" + str(i) + ".png"), np.flip(rgb, axis=2))
             cv2.imwrite(osp.join("figs", "combined" + str(i) + ".png"), np.flip(rgb, axis=2))
-            fig, axs = plt.subplots(1, 3, tight_layout=True)
-            if light_mode:
-                rgb0 = np.ones((cart_pixel_width, cart_pixel_width, 3), np.uint8) * 255
-                mask = np.logical_not(cart_lidar == 255) * 255
-                rgb0[..., 1] = mask
-                rgb0[..., 2] = mask
-                rgb1 = np.ones((cart_pixel_width, cart_pixel_width, 3), np.uint8) * 255
-                mask2 = np.logical_not(cart == 255) * 255
-                rgb1[..., 0] = mask2
-                rgb1[..., 1] = mask2
-                axs[0].imshow(rgb1)
-                axs[1].imshow(rgb0)
-            else:
-                axs[0].imshow(cart, cmap=cm.gray)
-                axs[1].imshow(cart_lidar, cmap=cm.gray)
-            axs[2].imshow(rgb)
-            plt.show()
+            # fig, axs = plt.subplots(1, 3, tight_layout=True)
+            # if light_mode:
+            #     rgb0 = np.ones((cart_pixel_width, cart_pixel_width, 3), np.uint8) * 255
+            #     mask = np.logical_not(cart_lidar == 255) * 255
+            #     rgb0[..., 1] = mask
+            #     rgb0[..., 2] = mask
+            #     rgb1 = np.ones((cart_pixel_width, cart_pixel_width, 3), np.uint8) * 255
+            #     mask2 = np.logical_not(cart == 255) * 255
+            #     rgb1[..., 0] = mask2
+            #     rgb1[..., 1] = mask2
+            #     axs[0].imshow(rgb1)
+            #     axs[1].imshow(rgb0)
+            # else:
+            #     axs[0].imshow(cart, cmap=cm.gray)
+            #     axs[1].imshow(cart_lidar, cmap=cm.gray)
+            # axs[2].imshow(rgb)
+            # plt.show()
+

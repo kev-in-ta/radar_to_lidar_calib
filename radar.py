@@ -37,17 +37,17 @@ def load_radar(example_path, fix_azimuths=False):
     timestamps = raw_example_data[:, :8].copy().view(np.int64)
     azimuths = (raw_example_data[:, 8:10].copy().view(np.uint16) / float(encoder_size) * 2 * np.pi).astype(np.float32)
     N = raw_example_data.shape[0]
-    azimuth_step = 2 * np.pi / N
+    azimuth_step = 2 * np.pi / 400
     if fix_azimuths:
     	azimuths = np.zeros((N, 1), dtype=np.float32)
     	for i in range(N):
             azimuths[i, 0] = i * azimuth_step
     valid = raw_example_data[:, 10:11] == 255
-    fft_data = raw_example_data[:, 11:].astype(np.float32) / 255.
+    fft_data = raw_example_data[:, 8:].astype(np.float32) / 255.
     return timestamps, azimuths, valid, fft_data
 
 def radar_polar_to_cartesian(azimuths, fft_data, radar_resolution, cart_resolution, cart_pixel_width,
-                             interpolate_crossover=True, fix_wobble=True):
+                             interpolate_crossover=True, fix_wobble=False):
     """Convert a polar radar scan to cartesian.
     Args:
         azimuths (np.ndarray): Rotation for each polar radar azimuth (radians)
@@ -76,7 +76,8 @@ def radar_polar_to_cartesian(azimuths, fft_data, radar_resolution, cart_resoluti
     azimuth_step = (azimuths[-1] - azimuths[0]) / (azimuths.shape[0] - 1)
     sample_u = (sample_range - radar_resolution / 2) / radar_resolution
     sample_v = (sample_angle - azimuths[0]) / azimuth_step
-    # This fixes the wobble in the old CIR204 data from Boreas
+    
+    # # This fixes the wobble in the old CIR204 data from Boreas
     M = azimuths.shape[0]
     azms = azimuths.squeeze()
     if fix_wobble:
@@ -89,7 +90,7 @@ def radar_polar_to_cartesian(azimuths, fft_data, radar_resolution, cart_resoluti
         a2 = azms[c2]
         delta = diff * (diff < 0) * (c3 > 0) / (a3 - a2 + 1e-14)
         sample_v = (c3 + delta).astype(np.float32)
-
+        
     # We clip the sample points to the minimum sensor reading range so that we
     # do not have undefined results in the centre of the image. In practice
     # this region is simply undefined.
@@ -98,7 +99,7 @@ def radar_polar_to_cartesian(azimuths, fft_data, radar_resolution, cart_resoluti
     if interpolate_crossover:
         fft_data = np.concatenate((fft_data[-1:], fft_data, fft_data[:1]), 0)
         sample_v = sample_v + 1
-
+    
     polar_to_cart_warp = np.stack((sample_u.astype(np.float32), sample_v.astype(np.float32)), -1)
     return cv2.remap(fft_data, polar_to_cart_warp, None, cv2.INTER_LINEAR)
 
