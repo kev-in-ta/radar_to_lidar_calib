@@ -9,6 +9,10 @@ from features import *
 from radar import *
 import argparse
 
+from matplotlib import style
+style.use('seaborn-white')
+plt.rcParams['font.family'] = 'serif'
+
 # Converts an array of target locations (N x 2) into a binary polar image
 def targets_to_polar_image(targets, shape):
     polar = np.zeros(shape)
@@ -135,6 +139,7 @@ if __name__ == "__main__":
         # Extract radar target locations and convert these into polar and cartesian images
         targets = cen2018features(fft_data, 58, feature_std, 17)
         polar = targets_to_polar_image(targets, fft_data.shape)
+        polar[polar.shape[0]//4:3*polar.shape[0]//4,:] = 0
         cart = radar_polar_to_cartesian(azimuths, polar, radar_resolution, cart_resolution, cart_pixel_width)
         cart = np.where(cart > 0, 255, 0)
 
@@ -217,8 +222,9 @@ if __name__ == "__main__":
         
         for i in range(0, len(radar_files)):
             _, azimuths, _, fft_data = load_radar(osp.join(radar_root, radar_files[i]), fix_azimuths)
-            targets = cen2018features(fft_data, 58, 3.0, 17)
+            targets = cen2018features(fft_data, 58, feature_std, 17)
             polar = targets_to_polar_image(targets, fft_data.shape)
+            polar[polar.shape[0]//4:3*polar.shape[0]//4,:] = 0
             cart = radar_polar_to_cartesian(azimuths, polar, radar_resolution, cart_resolution, cart_pixel_width)
             cart = np.where(cart > 0, 255, 0)
             x = load_lidar(osp.join(lidar_root, lidar_files[i]))
@@ -229,22 +235,34 @@ if __name__ == "__main__":
                 x[:,j] = np.squeeze(np.matmul(R, x[:,j].reshape(3,1)))
             cart_lidar2 = lidar_to_cartesian_image(x, cart_pixel_width, cart_resolution)
             if light_mode:
-                rgb = np.ones((cart_pixel_width, cart_pixel_width, 3), np.uint8) * 255
-                mask = np.logical_not(cart_lidar2 == 255) * 255
-                rgb[..., 1] = mask
-                rgb[..., 2] = mask
-                mask2 = np.logical_not(cart == 255) * 255
-                rgb[..., 0] = np.logical_or(cart_lidar2, mask2) * 255
-                rgb[..., 1] = np.logical_and(rgb[..., 1], mask2) * 255
-                rgb[..., 2] = np.logical_or(rgb[..., 2], cart) * 255
+                rgb = np.zeros((cart_pixel_width, cart_pixel_width, 3), np.uint8) * 255
+                
+                mask = np.logical_not(cart_lidar2 == 255)
+                mask2 = np.logical_not(cart == 255)
+                
+                rgb[...,0] = np.logical_and(cart_lidar2, mask2) * 255
+                rgb[...,1] = np.logical_and(cart, cart_lidar2) * 255
+                rgb[...,2] = np.logical_and(cart, mask) * 255
+                
+                rgb[...,0] = np.logical_or(rgb[...,0], np.logical_and(mask, mask2)) * 255
+                rgb[...,1] = np.logical_or(rgb[...,1], np.logical_and(mask, mask2)) * 255
+                rgb[...,2] = np.logical_or(rgb[...,2], np.logical_and(mask, mask2)) * 255
+                
+                #mask = np.logical_not(cart_lidar2 == 255) * 255
+                #rgb[..., 1] = mask
+                #rgb[..., 2] = mask
+                #mask2 = np.logical_not(cart == 255) * 255
+                #rgb[..., 0] = np.logical_or(cart_lidar2, mask2) * 255
+                #rgb[..., 1] = np.logical_and(rgb[..., 1], mask2) * 255
+                #rgb[..., 2] = np.logical_or(rgb[..., 2], cart) * 255
                 #rgb[..., 0] *= np.logical_not(np.logical_and(cart_lidar2, cart))
             else:
                 rgb = np.zeros((cart_pixel_width, cart_pixel_width, 3), np.uint8)
                 rgb[..., 0] = cart_lidar2
                 rgb[..., 1] = cart
 
-            cv2.imwrite(osp.join("figs", "combined" + str(i) + ".png"), np.flip(rgb, axis=2))
-            cv2.imwrite(osp.join("figs", "combined" + str(i) + ".png"), np.flip(rgb, axis=2))
+            cv2.imwrite(osp.join("figs", "combined" + str(i) + ".png"), np.flip(rgb[100:400,200:600,:], axis=2))
+            #cv2.imwrite(osp.join("figs", "combined" + str(i) + ".png"), np.flip(rgb, axis=2))
             # fig, axs = plt.subplots(1, 3, tight_layout=True)
             # if light_mode:
             #     rgb0 = np.ones((cart_pixel_width, cart_pixel_width, 3), np.uint8) * 255

@@ -1,27 +1,29 @@
 # radar_to_lidar_calib
-This repository can be used to calculate the extrinsic calibration between a Navtech radar and a 3D (Velodyne) lidar. I use correlative scan matching via the Fourier Mellin transform to estimate the translation and rotation between the lidar and the radar. The image below illustrates the quality of the registration with lidar points in red and radar targets in green.
+This *forked* repository can be used to calculate the extrinsic calibration between a Navtech radar and a 3D (~~Velodyne~~ *RoboSense*) lidar. I use correlative scan matching via the Fourier Mellin transform to estimate the translation and rotation between the lidar and the radar. The image below illustrates the quality of the registration with lidar points in red and radar targets in green.
 
 ![Combined](combined.png "Combined")
 
 # Instructions
-The robot/vehicle should be outdoors and stationary during the calibration process.
+The robot/vehicle should be outdoors and stationary during the calibration process. *Indoor calibration is also possible, but is much noisier.*
 
 ~~It is expected that Navtech radar data is being published as a Polar image using the format described by the [Oxford Radar Robotcar Dataset](https://oxford-robotics-institute.github.io/radar-robotcar-dataset/). This format expects that the polar image is shifted horizontally by 11 pixels such that timestamp and azimuth data are encoded in the image. The first eight pixels correspond to the UNIX timestamp as int64 (cols 0-7). Columns 8-9 encode the sweep counter as uint16, converted to angle in radians with angle = pi * sweep_counter / 2800. Column 10 represents a valid flag, which we do not use but preserve for compatibility with their format.~~
 
-***The code has been modified to assume an 8 pixel shift which stores the timestamp. No azimuth information is encoded.***
+*The code has been modified to assume an 8 pixel shift which stores the timestamp. No azimuth information is encoded.*
 
 ~~Collect at least one pair of radar and lidar data extracted using the extract.py script.~~
 ~~This script expects that your radar and lidar topics are being published in ROS.~~
 
-***Extraction is completed separately.***
+*Extraction is completed separately. See https://github.com/kev-in-ta/l2c-info-calib for extraction script.*
 
 Collecting more pairs of data in different locations will lead to a more accurate final result since we average the translation and rotation estimates over the number of pairs.
 
 Note: this calibration is mostly useful for estimating rotation. I've verified that with 10 radar-lidar pairs, I was able to get a rotation accuracy of < 0.1 degrees. The translation estimation isn't as good, and probably isn't usable. It might be possible to upsample the cartesian image on a cropped region to get a better translation estimate, but it would be tough to beat hand measurements or a CAD model (1 cm error).
 
-Note 2: the extract.py script uses rospy and Python 2. The calibrate.py script uses Python 3.
+Note 2: ~~the extract.py script uses rospy and Python 2.~~ The calibrate.py script uses Python 3.
 
 # Running Calibration
+
+The command to run the radar-lidar calibration is shown below:
 
 ```bash
 python calibrate.py --root {/path/to/root} --resolution 0.044 --fix_azimuths --light_mode --feature_std 4.0
@@ -31,11 +33,29 @@ python calibrate.py --root {/path/to/root} --resolution 0.044 --fix_azimuths --l
 
 **RADAR format:** `.png` polar image
 
-`--feature_std 4.0` may be used in indoor settings to mitigate the noisiness of returns. Default in original repository was `3.0`.
+### Additional Parameters
+
+`--feature_std` (float) may be used in indoor settings to mitigate the noisiness of returns. Default in original repository was `3.0`.
+
+`--x_offset` (float) pre-set the x offset (in BEV) to improve rotational calibration in noisy scenes.
+
+`--y_offset` (float) pre-set the y offset (in BEV) to improve rotational calibration in noisy scenes.
 
 # Example Data
 
 ~~Sample data for this repository can be downloaded using the provided script: download_data.sh. The example data includes radar data from a Navtech CIR204-H and lidar data from a Velodyne Alpha-Prime (128 beam).~~
+
+You can find sample data at following location:
+
+https://drive.google.com/file/d/1zQD626R2mJjWxLiGeR96Esmajg6hEPOK/view?usp=sharing
+
+or get the data by:
+
+```bash
+pip install gdown
+gdown https://drive.google.com/uc?id=1zQD626R2mJjWxLiGeR96Esmajg6hEPOK
+unzip info_calib_sample_data.zip
+```
 
 # References
 Using the Fourier Mellin transform with radar data was previously shown in these works:
@@ -50,4 +70,4 @@ The Fourier Mellin transform for image registration is described in detail here:
 
 ## TODO:
 - [x] Remove outliers from the registration process to improve the final rotation estimate
-  *Only returns the average of results within 3 standard deviations of the mean result.
+  *Only returns the average of results within 3 standard deviations of the mean result.*
